@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Will you be my Valentine?</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="scene">
+    <div class="blobs" aria-hidden="true"></div>
+    <div id="floatingHearts" class="floating-hearts" aria-hidden="true"></div>
+
+    <main class="card" role="main" aria-labelledby="title">
+      <header class="card-header">
+        <div class="logo" aria-hidden="true">💌</div>
+        <h1 id="title" class="title">Will you be my Valentine?</h1>
+        <p class="subtitle">This is important — pick carefully 💕</p>
+      </header>
+
+      <section id="btnRow" class="btn-row" aria-label="Answer choices">
+        <button id="yesBtn" class="btn yes" aria-label="Yes, I will be your Valentine">
+          <span class="heart-ico" aria-hidden="true">💖</span> Yes
+        </button>
+
+        <button id="noBtn" class="btn no" aria-label="No, I will not be your Valentine">
+          <span class="no-text">No 😅</span>
+        </button>
+      </section>
+
+      <p class="hint">Try to click "No" — it's playful! (Works with mouse, touch & keyboard)</p>
+    </main>
+
+    <!-- overlay shown after clicking Yes -->
+    <div id="overlay" class="overlay" role="dialog" aria-modal="true" aria-hidden="true">
+      <div class="overlay-card">
+        <h2 id="overlayTitle">Yay! 💘</h2>
+        <div id="typed" class="typed"></div>
+        <div class="overlay-actions">
+          <button id="shareBtn" class="btn ghost">Share the love</button>
+          <button id="closeOverlay" class="btn yes">Close</button>
+        </div>
+      </div>
+      <div id="confetti" class="confetti-root" aria-hidden="true"></div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
