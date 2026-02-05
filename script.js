@@ -1,156 +1,266 @@
-// Updated script: shows persuasive lines each time user clicks "No" (plus existing behavior)
-(function(){
-  // DOM refs
+// Enhanced interactivity, visuals, and sound for the Valentine proposal page.
+// - Smarter No dodge (distance-based, smooth)
+// - Floating hearts background particles
+// - Confetti hearts + typed overlay message + WebAudio chime
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Elements
   const noBtn = document.getElementById('noBtn');
   const yesBtn = document.getElementById('yesBtn');
-  const buttonsArea = document.getElementById('buttons');
-  const popup = document.getElementById('popup');
-  const closePopup = document.getElementById('closePopup');
+  const btnRow = document.getElementById('btnRow');
+  const overlay = document.getElementById('overlay');
+  const closeOverlay = document.getElementById('closeOverlay') || document.getElementById('closeOverlay'); // closeOverlay is dynamic only in overlay actions
+  const confettiRoot = document.getElementById('confetti');
+  const floatingHeartsRoot = document.getElementById('floatingHearts');
+  const typedEl = document.getElementById('typed');
   const shareBtn = document.getElementById('shareBtn');
-  const persuadeEl = document.getElementById('persuade');
 
-  // Keep previous sticker and confetti logic (omitted here for brevity in this snippet)
-  // (Assume the rest of your sticker code is unchanged — only persuasion logic added/updated.)
+  // Safety checks
+  if (!noBtn || !yesBtn || !btnRow) return;
 
-  // persuasive messages to rotate through
-  const persuadeLines = [
-    "But think about all the sunsets we've watched together… 🌅",
-    "Remember that time we laughed until our stomachs hurt? 😄",
-    "I made a playlist just for you — and it's missing your 'Yes'. 🎵",
-    "Promise I'll bring your favorite snacks on our next date. 🍪",
-    "I baked cookies just so you'd say yes. (I ate some too) 🍪💕",
-    "Your smile is my favorite thing — don't hide it from me. 😊",
-    "We have a lot more inside jokes to make — let's start with this yes. 😉",
-    "Imagine our next adventure together — it'll be sweeter with you. ✈️❤️",
-    "I'll hold your hand through scary movies and Monday mornings. 🍿☕",
-    "You + me = best team. Ready to level up? 💑",
-    "If you say yes I'll draw you a silly heart every day. 🎨💓",
-    "Please? I'll let you pick the next movie. 🎬😍"
-  ];
-  let persuadeIndex = 0;
+  // Utility
+  const clamp = (v, a, b) => Math.min(Math.max(v, a), b);
 
-  // show persuade message with animation and accessible announcement
-  function showPersuadeLine() {
-    const line = persuadeLines[persuadeIndex % persuadeLines.length];
-    persuadeIndex++;
-    // set text and animate
-    persuadeEl.textContent = line;
-    // trigger show class for CSS animation
-    persuadeEl.classList.remove('show');
-    // small reflow to restart animation
-    void persuadeEl.offsetWidth;
-    persuadeEl.classList.add('show');
+  // Ensure container is positioned
+  btnRow.style.position = 'relative';
 
-    // optionally play a tiny playful sound (subtle)
+  // INITIAL POSITIONING
+  function setInitialPositions() {
+    const rowRect = btnRow.getBoundingClientRect();
+    const yesRect = yesBtn.getBoundingClientRect();
+    const noRect = noBtn.getBoundingClientRect();
+
+    // Place Yes near left center
+    const yesLeft = Math.round(rowRect.width * 0.12);
+    const yesTop = Math.round((rowRect.height - yesRect.height) / 2);
+    yesBtn.style.position = 'absolute';
+    yesBtn.style.left = `${yesLeft}px`;
+    yesBtn.style.top = `${yesTop}px`;
+
+    // Place No near right center
+    const noLeft = Math.round(rowRect.width - noRect.width - (rowRect.width * 0.12));
+    const noTop = Math.round((rowRect.height - noRect.height) / 2);
+    noBtn.style.position = 'absolute';
+    noBtn.style.left = `${noLeft}px`;
+    noBtn.style.top = `${noTop}px`;
+  }
+
+  // Move No away smoothly using pointer distance and animate wiggle
+  function moveNoAwayFromPointer(clientX, clientY) {
+    const rowRect = btnRow.getBoundingClientRect();
+    const noRect = noBtn.getBoundingClientRect();
+    const localX = clientX - rowRect.left;
+    const localY = clientY - rowRect.top;
+
+    const noCenterX = (noRect.left - rowRect.left) + noRect.width / 2;
+    const noCenterY = (noRect.top - rowRect.top) + noRect.height / 2;
+
+    const dx = noCenterX - localX;
+    const dy = noCenterY - localY;
+    const dist = Math.hypot(dx, dy) || 1;
+
+    // threshold scales with row width
+    const threshold = Math.max(80, Math.min(160, rowRect.width * 0.16));
+    if (dist > threshold + 10) return; // far enough; no move
+
+    // Move amount grows when pointer is closer
+    const push = threshold + 50 + (1 - clamp(dist / threshold, 0, 1)) * 140;
+    const nx = noCenterX + (dx / dist) * push + (Math.random() * 60 - 30);
+    const ny = noCenterY + (dy / dist) * push + (Math.random() * 40 - 20);
+
+    const maxLeft = rowRect.width - noRect.width - 8;
+    const maxTop = rowRect.height - noRect.height - 8;
+    const clampedX = clamp(nx - noRect.width / 2, 8, maxLeft);
+    const clampedY = clamp(ny - noRect.height / 2, 8, maxTop);
+
+    // Smooth movement using CSS transitions
+    noBtn.style.transition = 'left 280ms cubic-bezier(.2,.9,.3,1), top 280ms cubic-bezier(.2,.9,.3,1)';
+    noBtn.style.left = `${Math.round(clampedX)}px`;
+    noBtn.style.top = `${Math.round(clampedY)}px`;
+
+    // Add a playful wiggle class
+    noBtn.classList.remove('no-wiggle');
+    // force reflow to restart animation
+    void noBtn.offsetWidth;
+    noBtn.classList.add('no-wiggle');
+  }
+
+  // High-level pointer handler
+  let lastPointer = { x: null, y: null };
+  function handlePointer(e) {
+    const cx = e.clientX ?? (e.touches && e.touches[0] && e.touches[0].clientX);
+    const cy = e.clientY ?? (e.touches && e.touches[0] && e.touches[0].clientY);
+    if (cx == null || cy == null) return;
+    // avoid firing too often; require a minimal movement
+    if (lastPointer.x !== null) {
+      const dx = Math.abs(cx - lastPointer.x);
+      const dy = Math.abs(cy - lastPointer.y);
+      if (dx < 4 && dy < 4) return;
+    }
+    lastPointer.x = cx; lastPointer.y = cy;
+    moveNoAwayFromPointer(cx, cy);
+  }
+
+  // Handlers
+  document.addEventListener('pointermove', (e) => handlePointer(e));
+  document.addEventListener('touchstart', (e) => handlePointer(e), { passive: true });
+
+  // Click/tap attempt on No -> move away
+  noBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    // emulate pointer trying to click at the center of button
+    const rect = noBtn.getBoundingClientRect();
+    handlePointer({ clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 });
+  });
+
+  // keyboard accessibility
+  noBtn.addEventListener('keydown', (e) => {
+    const keys = ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Enter',' '];
+    if (keys.includes(e.key)) {
+      e.preventDefault();
+      const rowRect = btnRow.getBoundingClientRect();
+      moveNoAwayFromPointer(rowRect.left + rowRect.width / 2, rowRect.top + rowRect.height / 2);
+    }
+  });
+
+  // Floating hearts background (gentle particles)
+  function spawnFloatingHeart() {
+    const el = document.createElement('div');
+    el.className = 'floating-heart';
+    const size = 12 + Math.random() * 28;
+    el.style.width = `${size}px`;
+    el.style.height = `${size}px`;
+    el.style.left = `${Math.random() * 100}vw`;
+    el.style.top = `${100 + Math.random() * 20}vh`;
+    el.style.opacity = 0.85;
+    el.style.position = 'fixed';
+    el.style.zIndex = 2;
+    el.style.pointerEvents = 'none';
+    el.innerHTML = `<svg viewBox="0 0 24 24" width="100%" height="100%"><path d="M12 21s-7.5-4.8-10-8.2C-0.6 7.9 4.2 3 7.8 5.4 9.6 6.7 10.5 8.6 12 10.2c1.5-1.6 2.4-3.5 4.2-4.8C19.8 3 24.6 7.9 22 12.8 19.5 16.2 12 21 12 21z" fill="${['#ff6b9a','#ff3864','#ff9bb3','#ffd7e2'][Math.floor(Math.random()*4)]}"></path></svg>`;
+    floatingHeartsRoot.appendChild(el);
+    const duration = 5500 + Math.random() * 2500;
+    el.animate([
+      { transform: 'translateY(0) scale(.9)', opacity: 0.95 },
+      { transform: `translateY(-120vh) scale(1.1)`, opacity: 0 }
+    ], { duration: duration, easing: 'linear' });
+    setTimeout(() => el.remove(), duration + 50);
+  }
+  // spawn hearts periodically
+  setInterval(spawnFloatingHeart, 700);
+  // spawn a few at start
+  for (let i=0;i<6;i++) setTimeout(spawnFloatingHeart, i*200);
+
+  // Confetti hearts for Yes
+  function spawnConfetti(count = 24) {
+    const colors = ['#ff6b9a','#ff3864','#ff9bb3','#ffd7e2','#ffb2d0'];
+    for (let i = 0; i < count; i++) {
+      const el = document.createElement('div');
+      el.className = 'confetti-heart';
+      const size = 14 + Math.random() * 28;
+      el.style.width = `${size}px`;
+      el.style.height = `${size}px`;
+      el.style.left = `${Math.random() * 100}vw`;
+      el.style.top = `${-10 - Math.random() * 20}vh`;
+      el.style.zIndex = 70;
+      el.style.pointerEvents = 'none';
+      const color = colors[Math.floor(Math.random() * colors.length)];
+      el.innerHTML = `<svg viewBox="0 0 24 24" width="100%" height="100%"><path d="M12 21s-7.5-4.8-10-8.2C-0.6 7.9 4.2 3 7.8 5.4 9.6 6.7 10.5 8.6 12 10.2c1.5-1.6 2.4-3.5 4.2-4.8C19.8 3 24.6 7.9 22 12.8 19.5 16.2 12 21 12 21z" fill="${color}"></path></svg>`;
+      confettiRoot.appendChild(el);
+      const duration = 2600 + Math.random() * 1200;
+      const leftEnd = (parseFloat(el.style.left) + (Math.random()*30 - 15)) + 'vw';
+      el.animate([
+        { transform: `translateY(0) rotate(${Math.random()*360}deg)`, opacity:1, left: el.style.left },
+        { transform: `translateY(110vh) rotate(${Math.random()*720}deg)`, opacity:0, left: leftEnd }
+      ], { duration: duration, easing: 'cubic-bezier(.2,.9,.2,1)' });
+      setTimeout(() => el.remove(), duration + 50);
+    }
+  }
+
+  // Typed text for overlay
+  function typeMessage(el, message, speed = 40) {
+    el.textContent = '';
+    let i = 0;
+    const id = setInterval(() => {
+      el.textContent += message[i++];
+      if (i >= message.length) clearInterval(id);
+    }, speed);
+  }
+
+  // Small chime via WebAudio
+  function playChime() {
     try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      const ctx = new AudioCtx();
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const t = ctx.currentTime;
       const o = ctx.createOscillator();
       const g = ctx.createGain();
-      o.type = 'triangle';
-      o.frequency.value = 520 + Math.random()*60;
-      g.gain.value = 0.02;
-      o.connect(g); g.connect(ctx.destination);
-      o.start();
-      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.12);
-      o.stop(ctx.currentTime + 0.15);
+      o.type = 'sine';
+      o.frequency.setValueAtTime(520, t);
+      o.frequency.exponentialRampToValueAtTime(880, t + 0.18);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.12, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 1.1);
+      o.connect(g);
+      g.connect(ctx.destination);
+      o.start(t);
+      o.stop(t + 1.2);
     } catch (e) {
-      // ignore audio errors (autoplay, unsupported, etc.)
-    }
-
-    // hide after a short time
-    clearTimeout(showPersuadeLine._timeout);
-    showPersuadeLine._timeout = setTimeout(()=> {
-      persuadeEl.classList.remove('show');
-    }, 2800);
-  }
-
-  // existing dodge logic (simplified here — keep your current implementation)
-  noBtn.style.transition = 'left .28s cubic-bezier(.2,.9,.3,1), top .28s cubic-bezier(.2,.9,.3,1), transform .18s ease';
-
-  function rectOverlap(a, b) { const xOverlap = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)); const yOverlap = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)); return xOverlap * yOverlap; }
-  function rectDistance(a, b) { const ax = (a.left + a.right)/2, ay = (a.top + a.bottom)/2; const bx = (b.left + b.right)/2, by = (b.top + b.bottom)/2; return Math.hypot(ax-bx, ay-by); }
-
-  function moveNoButtonRandomly(avoidRect) {
-    const areaRect = buttonsArea.getBoundingClientRect();
-    const btnRect = noBtn.getBoundingClientRect();
-    const yesRect = yesBtn.getBoundingClientRect();
-    const maxX = Math.max(8, areaRect.width - btnRect.width - 8);
-    const maxY = Math.max(8, areaRect.height - btnRect.height - 8);
-
-    let attempt = 0;
-    let left, top;
-    do {
-      left = Math.random() * maxX;
-      top  = Math.random() * maxY;
-      attempt++;
-      const candidateRect = {
-        left: areaRect.left + left,
-        right: areaRect.left + left + btnRect.width,
-        top: areaRect.top + top,
-        bottom: areaRect.top + top + btnRect.height
-      };
-      const overlap = rectOverlap(candidateRect, yesRect);
-      if (overlap < 50 && (!avoidRect || rectDistance(candidateRect, avoidRect) > 70)) break;
-    } while(attempt < 12);
-
-    noBtn.style.left = `${Math.max(6, left)}px`;
-    noBtn.style.top  = `${Math.max(6, top)}px`;
-    noBtn.style.transform = `rotate(${(Math.random()-0.5)*10}deg)`;
-  }
-
-  // dodge + show persuasion only when user actually attempts a click/tap/press
-  function attemptNo(e) {
-    // show persuasion only on explicit click/tap/keyboard-activation events
-    const isClickLike = e && (e.type === 'click' || e.type === 'touchstart' || (e.type === 'keydown' && (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar')));
-    // compute avoidRect for nicer escaping
-    let avoidRect = null;
-    if (e && (e.clientX || (e.touches && e.touches[0]))) {
-      const x = e.clientX || (e.touches && e.touches[0] && e.touches[0].clientX) || 0;
-      const y = e.clientY || (e.touches && e.touches[0] && e.touches[0].clientY) || 0;
-      avoidRect = { left: x-40, right: x+40, top: y-40, bottom: y+40 };
-    }
-    try { e && e.preventDefault(); } catch(e){}
-    // tiny leap animation
-    noBtn.style.transform = 'scale(1.06) rotate(4deg)';
-    setTimeout(()=> moveNoButtonRandomly(avoidRect), 70);
-
-    if (isClickLike) {
-      showPersuadeLine();
+      // ignore if audio is blocked
+      console.warn('chime failed', e);
     }
   }
 
-  // attach events (keep other events to maintain existing UX)
-  noBtn.addEventListener('click', attemptNo);
-  noBtn.addEventListener('touchstart', function(e){ attemptNo(e); }, {passive:false});
-  noBtn.addEventListener('keydown', function(e){
-    if (['Enter',' ','Spacebar','Tab'].includes(e.key)) {
-      attemptNo(e);
-      // keep keyboard flow to yes
-      yesBtn.focus();
+  // Show overlay and celebration
+  function showYesOverlay() {
+    overlay.classList.add('show');
+    overlay.setAttribute('aria-hidden', 'false');
+    // typed message
+    const message = "You just made me the happiest person. Thank you for saying YES — let's make memories together! 💕";
+    typeMessage(typedEl, message, 30);
+    // confetti waves
+    spawnConfetti(24);
+    setTimeout(() => spawnConfetti(18), 350);
+    setTimeout(() => spawnConfetti(12), 800);
+    // chime
+    playChime();
+  }
+
+  function hideOverlay() {
+    overlay.classList.remove('show');
+    overlay.setAttribute('aria-hidden', 'true');
+  }
+
+  // Wire Yes/Close/Share
+  yesBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    showYesOverlay();
+  });
+
+  // Close overlay button (delegated)
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('#closeOverlay')) hideOverlay();
+    if (e.target.closest('#shareBtn')) {
+      // small share interaction (copy short message)
+      const shareText = "She said YES! 💘 — https://your-site.example";
+      navigator.clipboard?.writeText(shareText).then(() => {
+        const t = e.target;
+        const prev = t.textContent;
+        t.textContent = 'Copied!';
+        setTimeout(() => t.textContent = prev, 1400);
+      }).catch(() => {
+        alert('Copy this message to share: ' + shareText);
+      });
     }
   });
-  noBtn.addEventListener('mouseenter', function(e){ /* keep dodge on hover but don't show persuasion */ 
-    try { e && e.preventDefault(); } catch(e){}
-    noBtn.style.transform = 'scale(1.03) rotate(2deg)';
-    setTimeout(()=> moveNoButtonRandomly(null), 90);
+
+  // Reposition on resize
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => setInitialPositions(), 90);
   });
 
-  // rest of page behavior (yes popup, confetti, stickers) should remain unchanged
-  // Example: yes button opens the popup (existing code kept)
-  yesBtn.addEventListener('click', function(){
-    popup.setAttribute('aria-hidden','false');
-    closePopup && closePopup.focus && closePopup.focus();
-    // (optional: play chime / spawn hearts — keep your existing functions)
-  });
-  closePopup && closePopup.addEventListener && closePopup.addEventListener('click', function(){ popup.setAttribute('aria-hidden','true'); yesBtn.focus(); });
-
-  // initialize
-  setTimeout(()=> {
-    const areaRect = buttonsArea.getBoundingClientRect();
-    noBtn.style.left = `${Math.min(30, Math.max(6, areaRect.width*0.18))}px`;
-    noBtn.style.top  = `${Math.min(areaRect.height*0.75, 120)}px`;
-    noBtn.style.transform = 'rotate(0deg)';
-  }, 80);
-
-})();
+  // Kick things off
+  setTimeout(setInitialPositions, 50);
+  // ensure overlay close is wired if element exists
+  // (overlay buttons are static in DOM; we handle clicks via delegation above)
+});
